@@ -115,3 +115,51 @@ func wait(wg *sync.WaitGroup) chan bool {
 ```go
 func (s *SpecSchedule) Next(t time.Time) time.Time {}
 ```
+
+### cron的run
+下面的代码对run过程做了部分删减，主体逻辑如下：
+1. 将当前时间分配给所有实体
+2. 进入for循环，对实体以时间先后来排序
+3. 选取第一个实体（最早的）以当前时间和调度时间的差来设置定时器
+4. for+select进入小循环：
+   a. 如果计时器到期触发，则执行任务再跳出循环
+   b. 如果有新任务添加触发，则添加任务跳出循环
+   c. 如果有查询请求触发，则返回查询结果继续等待触发
+   d. 暂停触发，退出函数
+   e. 移除任务请求触发，移除任务退出小循环
+5. 重复执行大循环，即排序、定时和进入小循环等待被触发。
+```go
+func (c *Cron) run() {
+	c.logger.Info("start")
+
+	// Figure out the next activation times for each entry.
+	now := c.now()
+	for _, entry := range c.entries {
+		entry.Next = entry.Schedule.Next(now)
+	}
+
+	for {
+		// Determine the next entry to run.
+		sort.Sort(byTime(c.entries))
+
+		var timer *time.Timer
+		timer = time.NewTimer(c.entries[0].Next.Sub(now))
+
+		for {
+			select {
+			case now = <-timer.C:
+
+			case newEntry := <-c.add:
+
+			case replyChan := <-c.snapshot:
+
+			case <-c.stop:
+
+			case id := <-c.remove:
+			}
+
+			break
+		}
+	}
+}
+```
